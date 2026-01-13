@@ -59,19 +59,19 @@ class FriendRequest(BaseModel):
 class GoogleToken(BaseModel):
     token: str
 
-# Google OAuth Client ID from the JSON file
-GOOGLE_CLIENT_ID = "347974923411-2ln342c2j6kcv5nc9sngpbqn97suhqhs.apps.googleusercontent.com"
-
 @app.post("/api/auth/google")
 async def google_auth(token_data: GoogleToken, db: AsyncSession = Depends(get_db)):
     """Verify Google OAuth token and create/update user"""
+    if not settings.google_client_id:
+        raise HTTPException(status_code=500, detail="Google OAuth not configured. Please set GOOGLE_CLIENT_ID environment variable.")
+    
     try:
         # Try to verify as ID token first
         try:
             idinfo = id_token.verify_oauth2_token(
                 token_data.token, 
                 requests.Request(), 
-                GOOGLE_CLIENT_ID
+                settings.google_client_id
             )
             google_id = idinfo.get('sub')
             email = idinfo.get('email', '')

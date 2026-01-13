@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     
+    # Google OAuth
+    google_client_id: Optional[str] = None
+    google_client_secret: Optional[str] = None
+    
     # Railway will set PORT environment variable
     @property
     def server_port(self) -> int:
