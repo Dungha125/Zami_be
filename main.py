@@ -591,9 +591,12 @@ async def handle_message(message: dict, sender_id: str):
                 )
                 db.add(db_message)
                 await db.commit()
+                print(f"Message saved: {sender_id} -> {target_id}")
             except Exception as e:
                 await db.rollback()
                 print(f"Error saving message to database: {e}")
+                import traceback
+                traceback.print_exc()
         
         # Send to specific target user
         chat_message = {

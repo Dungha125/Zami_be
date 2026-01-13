@@ -126,6 +126,29 @@ async def init_db():
         except Exception as e:
             # If migration fails, log but don't crash (column might already exist)
             print(f"Migration note: {e}")
+        
+        # Migrate: Clean up messages table schema (remove unwanted columns)
+        try:
+            # Check if messages table exists and has unwanted columns
+            result = await conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='messages' AND column_name IN ('status', 'delivered_at', 'read_at')
+            """))
+            unwanted_columns = [row[0] for row in result.fetchall()]
+            
+            # Drop unwanted columns if they exist
+            for col in unwanted_columns:
+                try:
+                    await conn.execute(text(f"""
+                        ALTER TABLE messages DROP COLUMN IF EXISTS {col}
+                    """))
+                    print(f"Removed column {col} from messages table")
+                except Exception as e:
+                    print(f"Error removing column {col}: {e}")
+        except Exception as e:
+            # If migration fails, log but don't crash
+            print(f"Messages table migration note: {e}")
 
 async def get_db():
     """Dependency to get database session"""
