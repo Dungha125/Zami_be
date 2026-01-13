@@ -4,9 +4,12 @@ from pydantic import BaseModel
 from typing import Dict, List, Optional
 import json
 import uvicorn
+import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
+from google.oauth2 import id_token
+from google.auth.transport import requests
 
 from settings import get_settings
 from database import (
@@ -52,6 +55,75 @@ class UpdateProfile(BaseModel):
 
 class FriendRequest(BaseModel):
     friend_user_id: str
+
+class GoogleToken(BaseModel):
+    token: str
+
+# Google OAuth Client ID from the JSON file
+GOOGLE_CLIENT_ID = "347974923411-2ln342c2j6kcv5nc9sngpbqn97suhqhs.apps.googleusercontent.com"
+
+@app.post("/api/auth/google")
+async def google_auth(token_data: GoogleToken, db: AsyncSession = Depends(get_db)):
+    """Verify Google OAuth token and create/update user"""
+    try:
+        # Try to verify as ID token first
+        try:
+            idinfo = id_token.verify_oauth2_token(
+                token_data.token, 
+                requests.Request(), 
+                GOOGLE_CLIENT_ID
+            )
+            google_id = idinfo.get('sub')
+            email = idinfo.get('email', '')
+            name = idinfo.get('name', email.split('@')[0] if email else 'User')
+            picture = idinfo.get('picture', '')
+        except ValueError as e:
+            # If ID token verification fails, it's not a valid token
+            raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+        
+        if not google_id:
+            raise HTTPException(status_code=400, detail="Invalid token - no user ID")
+        
+        # Check if user exists by google_id
+        result = await db.execute(
+            select(DBUserProfile).where(DBUserProfile.google_id == google_id)
+        )
+        db_profile = result.scalar_one_or_none()
+        
+        if db_profile:
+            # Update existing user
+            user_id = db_profile.user_id
+            db_profile.email = email
+            db_profile.username = name
+            db_profile.avatar = picture
+            db_profile.updated_at = datetime.utcnow()
+        else:
+            # Create new user
+            user_id = f"google_{google_id}"
+            db_profile = DBUserProfile(
+                user_id=user_id,
+                google_id=google_id,
+                email=email,
+                username=name,
+                avatar=picture,
+                bio="",
+                status=""
+            )
+            db.add(db_profile)
+        
+        await db.commit()
+        await db.refresh(db_profile)
+        
+        return {
+            "user_id": db_profile.user_id,
+            "username": db_profile.username,
+            "avatar": db_profile.avatar,
+            "email": db_profile.email
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
 
 @app.get("/")
 async def root():

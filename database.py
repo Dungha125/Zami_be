@@ -16,8 +16,10 @@ class UserProfile(Base):
     __tablename__ = "user_profiles"
     
     user_id = Column(String, primary_key=True, index=True)
+    google_id = Column(String, nullable=True, index=True, unique=True)  # Google user ID
+    email = Column(String, nullable=True, index=True)
     username = Column(String, nullable=False, index=True)
-    avatar = Column(Text, nullable=True)  # Base64 encoded image
+    avatar = Column(Text, nullable=True)  # URL or Base64 encoded image
     bio = Column(Text, nullable=True)
     status = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
