@@ -502,26 +502,53 @@ async def broadcast_location_update(user_id: str, location: dict):
             del active_connections[uid]
 
 async def handle_message(message: dict, sender_id: str):
-    """Handle chat messages"""
-    broadcast_message = {
-        "type": "message",
-        "sender_id": sender_id,
-        "content": message.get("content"),
-        "sticker": message.get("sticker"),
-        "timestamp": datetime.now().isoformat()
-    }
+    """Handle chat messages - send to specific target user"""
+    target_id = message.get("target_id")
     
-    disconnected = []
-    for uid, ws in active_connections.items():
-        if uid != sender_id:  # Don't send back to sender
+    if not target_id:
+        # If no target_id, broadcast to all (backward compatibility)
+        broadcast_message = {
+            "type": "message",
+            "sender_id": sender_id,
+            "content": message.get("content"),
+            "sticker": message.get("sticker"),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        disconnected = []
+        for uid, ws in active_connections.items():
+            if uid != sender_id:  # Don't send back to sender
+                try:
+                    await ws.send_text(json.dumps(broadcast_message))
+                except:
+                    disconnected.append(uid)
+        
+        for uid in disconnected:
+            if uid in active_connections:
+                del active_connections[uid]
+    else:
+        # Send to specific target user
+        chat_message = {
+            "type": "message",
+            "sender_id": sender_id,
+            "content": message.get("content"),
+            "sticker": message.get("sticker"),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Send to target user
+        if target_id in active_connections:
             try:
-                await ws.send_text(json.dumps(broadcast_message))
+                await active_connections[target_id].send_text(json.dumps(chat_message))
             except:
-                disconnected.append(uid)
-    
-    for uid in disconnected:
-        if uid in active_connections:
-            del active_connections[uid]
+                pass
+        
+        # Also send back to sender so they can see their own message
+        if sender_id in active_connections:
+            try:
+                await active_connections[sender_id].send_text(json.dumps(chat_message))
+            except:
+                pass
 
 async def broadcast_to_room(room_id: str, message: dict):
     """Broadcast message to all users in a room"""
