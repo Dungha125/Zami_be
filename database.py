@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, String, DateTime, Float, Text, Boolean, ForeignKey, Integer
+from sqlalchemy import Column, String, DateTime, Float, Text, Boolean, ForeignKey, Integer, text
 from datetime import datetime
 from settings import get_settings
 
@@ -48,9 +48,69 @@ class UserLocation(Base):
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
 
 async def init_db():
-    """Initialize database tables"""
+    """Initialize database tables and migrate schema if needed"""
     async with engine.begin() as conn:
+        # Create all tables if they don't exist
         await conn.run_sync(Base.metadata.create_all)
+        
+        # Migrate: Add google_id and email columns if they don't exist
+        try:
+            # Check if google_id column exists
+            result = await conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='user_profiles' AND column_name='google_id'
+            """))
+            row = result.fetchone()
+            if not row:
+                # Add google_id column
+                await conn.execute(text("""
+                    ALTER TABLE user_profiles 
+                    ADD COLUMN google_id VARCHAR
+                """))
+                # Create index (PostgreSQL doesn't support IF NOT EXISTS for indexes in all versions)
+                try:
+                    await conn.execute(text("""
+                        CREATE INDEX ix_user_profiles_google_id 
+                        ON user_profiles(google_id)
+                    """))
+                except Exception:
+                    pass  # Index might already exist
+                try:
+                    await conn.execute(text("""
+                        CREATE UNIQUE INDEX ix_user_profiles_google_id_unique 
+                        ON user_profiles(google_id) 
+                        WHERE google_id IS NOT NULL
+                    """))
+                except Exception:
+                    pass  # Index might already exist
+                print("Added google_id column to user_profiles")
+            
+            # Check if email column exists
+            result = await conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='user_profiles' AND column_name='email'
+            """))
+            row = result.fetchone()
+            if not row:
+                # Add email column
+                await conn.execute(text("""
+                    ALTER TABLE user_profiles 
+                    ADD COLUMN email VARCHAR
+                """))
+                # Create index
+                try:
+                    await conn.execute(text("""
+                        CREATE INDEX ix_user_profiles_email 
+                        ON user_profiles(email)
+                    """))
+                except Exception:
+                    pass  # Index might already exist
+                print("Added email column to user_profiles")
+        except Exception as e:
+            # If migration fails, log but don't crash (column might already exist)
+            print(f"Migration note: {e}")
 
 async def get_db():
     """Dependency to get database session"""
