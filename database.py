@@ -2,19 +2,12 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import declarative_base
 from sqlalchemy import Column, String, DateTime, Float, Text, Boolean, ForeignKey, Integer
 from datetime import datetime
-import os
+from settings import get_settings
 
-# Database URL from environment variable
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://jagat_user:jagat_password@localhost:5432/jagat_db"
-)
+settings = get_settings()
 
-# Convert postgresql:// to postgresql+asyncpg:// for async support
-if DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-
-engine = create_async_engine(DATABASE_URL, echo=False)
+# Use async database URL from settings
+engine = create_async_engine(settings.database_url_async, echo=False, pool_pre_ping=True)
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 Base = declarative_base()
 

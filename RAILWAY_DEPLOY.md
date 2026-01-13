@@ -40,9 +40,18 @@ Bạn nên thêm biến môi trường trong Railway Dashboard → Variables:
 - Ví dụ: `https://your-frontend.railway.app,https://yourdomain.com`
 - Nếu không set, backend sẽ allow all origins (không khuyến khích cho production)
 
+**PORT** (Automatic):
+- Railway tự động set PORT environment variable
+- Backend sẽ tự động sử dụng PORT từ Railway
+
+**DEBUG** (Optional):
+- Set `DEBUG=true` để enable debug mode
+- Default: `false`
+
 **Lưu ý**: 
 - Set ALLOWED_ORIGINS với domain cụ thể để đảm bảo bảo mật
 - WebSocket yêu cầu credentials, nên cần set ALLOWED_ORIGINS cụ thể
+- Xem file `.env.example` để biết tất cả các biến môi trường có thể config
 
 ## Bước 5: Deploy
 

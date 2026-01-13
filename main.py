@@ -5,38 +5,24 @@ from typing import Dict, List, Optional
 import json
 import uvicorn
 from datetime import datetime
-import base64
-import os
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
 
+from settings import get_settings
 from database import (
     init_db, get_db, AsyncSessionLocal, UserProfile as DBUserProfile, 
     Friend as DBFriend, UserLocation as DBUserLocation
 )
 
-app = FastAPI(title="Jagat Clone API")
+settings = get_settings()
+
+app = FastAPI(title=settings.app_name, debug=settings.debug)
 
 # CORS configuration
-# Recommended: Set ALLOWED_ORIGINS environment variable in Railway
-# Example: ALLOWED_ORIGINS=https://your-frontend.railway.app,https://yourdomain.com
-allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
-if allowed_origins_env:
-    allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",")]
-    allow_credentials = True
-elif os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PUBLIC_DOMAIN"):
-    # In Railway but no ALLOWED_ORIGINS set, allow all (not recommended for production)
-    allowed_origins = ["*"]
-    allow_credentials = False  # Cannot use credentials with wildcard origin
-else:
-    # Default for local development
-    allowed_origins = ["http://localhost:3000", "http://localhost:5173"]
-    allow_credentials = True
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=allow_credentials,
+    allow_origins=settings.cors_origins,
+    allow_credentials=settings.cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -522,4 +508,9 @@ async def handle_webrtc_ice(message: dict, sender_id: str):
             pass
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        "main:app",
+        host=settings.host,
+        port=settings.server_port,
+        reload=settings.debug
+    )
