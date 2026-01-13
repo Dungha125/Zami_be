@@ -367,40 +367,48 @@ async def get_messages(
     target_id: str,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get chat history between two users, delete messages older than 7 days"""
-    # Delete messages older than 7 days
-    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    """Get chat history between two users"""
     try:
-        await db.execute(
-            delete(DBMessage).where(DBMessage.created_at < seven_days_ago)
+        # Cleanup old messages (older than 7 days) in a separate transaction
+        seven_days_ago = datetime.utcnow() - timedelta(days=7)
+        async with AsyncSessionLocal() as cleanup_db:
+            try:
+                await cleanup_db.execute(
+                    delete(DBMessage).where(DBMessage.created_at < seven_days_ago)
+                )
+                await cleanup_db.commit()
+            except Exception as e:
+                await cleanup_db.rollback()
+                print(f"Error deleting old messages: {e}")
+        
+        # Get messages between the two users (bidirectional)
+        result = await db.execute(
+            select(DBMessage).where(
+                or_(
+                    and_(DBMessage.sender_id == user_id, DBMessage.receiver_id == target_id),
+                    and_(DBMessage.sender_id == target_id, DBMessage.receiver_id == user_id)
+                )
+            ).order_by(DBMessage.created_at.asc())
         )
-        await db.commit()
+        messages = result.scalars().all()
+        
+        messages_list = []
+        for msg in messages:
+            messages_list.append({
+                "sender_id": msg.sender_id,
+                "receiver_id": msg.receiver_id,
+                "content": msg.content,
+                "sticker": msg.sticker,
+                "timestamp": msg.created_at.isoformat() + "Z"
+            })
+        
+        return {"messages": messages_list}
     except Exception as e:
-        await db.rollback()
-        print(f"Error deleting old messages: {e}")
-    
-    # Get messages between the two users (bidirectional)
-    result = await db.execute(
-        select(DBMessage).where(
-            or_(
-                and_(DBMessage.sender_id == user_id, DBMessage.receiver_id == target_id),
-                and_(DBMessage.sender_id == target_id, DBMessage.receiver_id == user_id)
-            )
-        ).order_by(DBMessage.created_at.asc())
-    )
-    messages = result.scalars().all()
-    
-    messages_list = []
-    for msg in messages:
-        messages_list.append({
-            "sender_id": msg.sender_id,
-            "receiver_id": msg.receiver_id,
-            "content": msg.content,
-            "sticker": msg.sticker,
-            "timestamp": msg.created_at.isoformat() + "Z"
-        })
-    
-    return {"messages": messages_list}
+        print(f"Error getting messages: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return empty list on error instead of failing
+        return {"messages": []}
 
 # WebSocket endpoint for real-time features
 @app.websocket("/ws/{user_id}")
