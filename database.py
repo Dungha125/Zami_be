@@ -47,6 +47,21 @@ class UserLocation(Base):
     accuracy = Column(Float, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
 
+class Message(Base):
+    __tablename__ = "messages"
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    sender_id = Column(String, ForeignKey("user_profiles.user_id"), nullable=False, index=True)
+    receiver_id = Column(String, ForeignKey("user_profiles.user_id"), nullable=False, index=True)
+    content = Column(Text, nullable=True)
+    sticker = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    # Index for querying conversations
+    __table_args__ = (
+        {'extend_existing': True},
+    )
+
 async def init_db():
     """Initialize database tables and migrate schema if needed"""
     async with engine.begin() as conn:

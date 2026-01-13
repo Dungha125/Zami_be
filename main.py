@@ -5,16 +5,16 @@ from typing import Dict, List, Optional
 import json
 import uvicorn
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, delete
 from google.oauth2 import id_token
 from google.auth.transport import requests
 
 from settings import get_settings
 from database import (
     init_db, get_db, AsyncSessionLocal, UserProfile as DBUserProfile, 
-    Friend as DBFriend, UserLocation as DBUserLocation
+    Friend as DBFriend, UserLocation as DBUserLocation, Message as DBMessage
 )
 
 settings = get_settings()
@@ -361,6 +361,47 @@ async def get_friends(user_id: str, db: AsyncSession = Depends(get_db)):
     
     return {"friends": friend_profiles}
 
+@app.get("/api/users/{user_id}/messages/{target_id}")
+async def get_messages(
+    user_id: str,
+    target_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get chat history between two users, delete messages older than 7 days"""
+    # Delete messages older than 7 days
+    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    try:
+        await db.execute(
+            delete(DBMessage).where(DBMessage.created_at < seven_days_ago)
+        )
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        print(f"Error deleting old messages: {e}")
+    
+    # Get messages between the two users (bidirectional)
+    result = await db.execute(
+        select(DBMessage).where(
+            or_(
+                and_(DBMessage.sender_id == user_id, DBMessage.receiver_id == target_id),
+                and_(DBMessage.sender_id == target_id, DBMessage.receiver_id == user_id)
+            )
+        ).order_by(DBMessage.created_at.asc())
+    )
+    messages = result.scalars().all()
+    
+    messages_list = []
+    for msg in messages:
+        messages_list.append({
+            "sender_id": msg.sender_id,
+            "receiver_id": msg.receiver_id,
+            "content": msg.content,
+            "sticker": msg.sticker,
+            "timestamp": msg.created_at.isoformat() + "Z"
+        })
+    
+    return {"messages": messages_list}
+
 # WebSocket endpoint for real-time features
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
@@ -502,8 +543,11 @@ async def broadcast_location_update(user_id: str, location: dict):
             del active_connections[uid]
 
 async def handle_message(message: dict, sender_id: str):
-    """Handle chat messages - send to specific target user"""
+    """Handle chat messages - send to specific target user and save to database"""
     target_id = message.get("target_id")
+    
+    # Use UTC time for consistency
+    message_time = datetime.utcnow()
     
     if not target_id:
         # If no target_id, broadcast to all (backward compatibility)
@@ -512,7 +556,7 @@ async def handle_message(message: dict, sender_id: str):
             "sender_id": sender_id,
             "content": message.get("content"),
             "sticker": message.get("sticker"),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": message_time.isoformat() + "Z"
         }
         
         disconnected = []
@@ -527,13 +571,29 @@ async def handle_message(message: dict, sender_id: str):
             if uid in active_connections:
                 del active_connections[uid]
     else:
+        # Save message to database
+        async with AsyncSessionLocal() as db:
+            try:
+                db_message = DBMessage(
+                    sender_id=sender_id,
+                    receiver_id=target_id,
+                    content=message.get("content"),
+                    sticker=message.get("sticker"),
+                    created_at=message_time
+                )
+                db.add(db_message)
+                await db.commit()
+            except Exception as e:
+                await db.rollback()
+                print(f"Error saving message to database: {e}")
+        
         # Send to specific target user
         chat_message = {
             "type": "message",
             "sender_id": sender_id,
             "content": message.get("content"),
             "sticker": message.get("sticker"),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": message_time.isoformat() + "Z"
         }
         
         # Send to target user
