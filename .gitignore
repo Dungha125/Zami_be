@@ -16,6 +16,7 @@ ENV/
 *.egg-info/
 dist/
 build/
+client_secret_347974923411-2ln342c2j6kcv5nc9sngpbqn97suhqhs.apps.googleusercontent.com.json
 
 # IDE
 .vscode/
