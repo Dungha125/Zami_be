@@ -483,6 +483,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                             db.add(db_location)
                         
                         await db.commit()
+                        await db.refresh(db_location)  # Refresh to get updated timestamp
                         
                         # Get username
                         profile_result = await db.execute(
